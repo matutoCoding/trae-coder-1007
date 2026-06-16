@@ -1291,7 +1291,7 @@ const App = {
 
             <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title">🎫 会员入场核销</h3>
+                    <h3 class="card-title">🎫 前台核销工作台（今日入场 ${this.getTodayCheckIns().length} 人）</h3>
                 </div>
                 <div class="card-body">
                     <div class="checkin-panel">
@@ -1325,9 +1325,9 @@ const App = {
                                     <option value="速度区">速度区</option>
                                 </select>
                             </div>
-                            <div id="safety-briefing-container" style="display: none;">
+                            <div id="safety-briefing-container" style="display: block;">
                                 <div class="member-briefing">
-                                    <h4>⚠️ 抱石攀爬安全告知</h4>
+                                    <h4>⚠️ 抱石攀爬安全告知（入场前必须确认）</h4>
                                     <ul>
                                         <li>攀爬前必须充分热身，避免运动损伤</li>
                                         <li>注意观察周围环境，确保落点清晰</li>
@@ -1347,6 +1347,39 @@ const App = {
                             <button class="btn btn-primary" style="width: 100%; margin-top: 16px;" onclick="App.processCheckin()">
                                 <span>✓</span> 确认入场
                             </button>
+                        </div>
+                    </div>
+                    <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+                        <h4 style="margin-bottom: 12px; font-weight: 600;">🏃 今日实时入场（${this.getTodayCheckIns().length} 人）</h4>
+                        <div style="max-height: 200px; overflow-y: auto;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>时间</th>
+                                        <th>会员</th>
+                                        <th>区域</th>
+                                        <th>安全告知</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${this.getTodayCheckIns().slice().reverse().slice(0, 10).map(c => `
+                                        <tr>
+                                            <td>${c.time}</td>
+                                            <td>${c.memberName}</td>
+                                            <td>${c.wallType}</td>
+                                            <td>
+                                                <span class="badge ${c.hasSafetyBriefing ? 'badge-active' : 'badge-expired'}">
+                                                    ${c.hasSafetyBriefing ? '已确认' : '未确认'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    `).join('') || `
+                                        <tr>
+                                            <td colspan="4" style="text-align: center; color: #a0aec0;">今日暂无入场</td>
+                                        </tr>
+                                    `}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -1522,7 +1555,7 @@ const App = {
     },
 
     refreshMembersPage() {
-        const members = DataStore.getAll('members');
+        const allMembers = DataStore.getAll('members');
         const checkIns = DataStore.getAll('checkIns');
         const todayCheckIns = this.getTodayCheckIns();
         const monthCheckIns = this.getMonthCheckIns();
@@ -1530,19 +1563,70 @@ const App = {
 
         const statCards = document.querySelectorAll('.stats-grid .stat-card');
         if (statCards.length >= 4) {
-            statCards[0].querySelector('.stat-info p').textContent = members.length;
-            statCards[0].querySelector('.trend').textContent = `↑ ${members.filter(m => m.status === 'active').length} 活跃`;
+            statCards[0].querySelector('.stat-info p').textContent = allMembers.length;
+            statCards[0].querySelector('.trend').textContent = `↑ ${allMembers.filter(m => m.status === 'active').length} 活跃`;
             statCards[1].querySelector('.stat-info p').textContent = monthCheckIns.length;
             statCards[2].querySelector('.stat-info p').textContent = expiringMembers.length;
-            statCards[3].querySelector('.stat-info p').textContent = members.filter(m => m.status === 'expired').length;
+            statCards[3].querySelector('.stat-info p').textContent = allMembers.filter(m => m.status === 'expired').length;
         }
 
+        const workbenchTitle = document.querySelector('.card:nth-child(3) .card-title');
+        if (workbenchTitle) {
+            workbenchTitle.textContent = `🎫 前台核销工作台（今日入场 ${todayCheckIns.length} 人）`;
+        }
+        const workbenchSubTitle = document.querySelector('.card:nth-child(3) h4');
+        if (workbenchSubTitle && workbenchSubTitle.textContent.includes('今日实时入场')) {
+            workbenchSubTitle.textContent = `🏃 今日实时入场（${todayCheckIns.length} 人）`;
+        }
+        const workbenchTodayBody = document.querySelectorAll('.card:nth-child(3) tbody')[1];
+        if (workbenchTodayBody) {
+            if (todayCheckIns.length === 0) {
+                workbenchTodayBody.innerHTML = `
+                    <tr>
+                        <td colspan="4" style="text-align: center; color: #a0aec0;">今日暂无入场</td>
+                    </tr>
+                `;
+            } else {
+                workbenchTodayBody.innerHTML = todayCheckIns.slice().reverse().slice(0, 10).map(c => `
+                    <tr>
+                        <td>${c.time}</td>
+                        <td>${c.memberName}</td>
+                        <td>${c.wallType}</td>
+                        <td>
+                            <span class="badge ${c.hasSafetyBriefing ? 'badge-active' : 'badge-expired'}">
+                                ${c.hasSafetyBriefing ? '已确认' : '未确认'}
+                            </span>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        let members = allMembers;
+        const searchInput = document.getElementById('member-search');
+        const typeSelect = document.getElementById('filter-member-type');
+        const statusSelect = document.getElementById('filter-member-status');
+        const search = searchInput?.value?.toLowerCase() || '';
+        const type = typeSelect?.value || '';
+        const status = statusSelect?.value || '';
+        if (search) {
+            members = members.filter(m => 
+                m.name.toLowerCase().includes(search) || 
+                m.phone.includes(search)
+            );
+        }
+        if (type) {
+            members = members.filter(m => m.memberType.includes(type));
+        }
+        if (status) {
+            members = members.filter(m => m.status === status);
+        }
         const membersList = document.getElementById('members-list');
         if (membersList) {
             membersList.innerHTML = this.renderMembersList(members);
         }
 
-        const todayTableBody = document.querySelector('.card:nth-child(4) tbody');
+        const todayTableBody = document.querySelector('.card:nth-child(5) tbody');
         if (todayTableBody) {
             if (todayCheckIns.length === 0) {
                 todayTableBody.innerHTML = `
@@ -3017,17 +3101,35 @@ const App = {
                             <div class="empty-icon">✅</div>
                             <p>所有装备已归还</p>
                         </div>
-                    ` : rentals.filter(r => r.status === 'rented').map(r => `
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #e2e8f0;">
-                            <div>
-                                <div style="font-weight: 500;">${r.memberName}</div>
-                                <div style="font-size: 0.8rem; color: #718096;">${r.equipmentName} · 出借于 ${r.rentDate} ${r.rentTime}</div>
+                    ` : (() => {
+                        const today = new Date();
+                        return rentals.filter(r => r.status === 'rented').map(r => {
+                            const rentDT = new Date(`${r.rentDate}T${r.rentTime || '00:00'}:00`);
+                            const hoursDiff = Math.round((today - rentDT) / (1000 * 60 * 60));
+                            const daysDiff = Math.floor(hoursDiff / 24);
+                            const timeStr = daysDiff > 0 ? `${daysDiff}天${hoursDiff % 24}小时` : `${hoursDiff}小时`;
+                            const isOverdue = daysDiff >= 3;
+                            return `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; background: ${isOverdue ? '#fff5f5' : 'transparent'};">
+                            <div style="flex: 1;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div style="font-weight: 500;">${r.memberName}</div>
+                                    ${isOverdue ? '<span class="badge badge-expired" style="font-size: 0.7rem;">已超时</span>' : (hoursDiff >= 24 ? '<span class="badge badge-pending" style="font-size: 0.7rem;">>24h</span>' : '')}
+                                </div>
+                                <div style="font-size: 0.8rem; color: #718096;">${r.equipmentName} · 出借 ${r.rentDate} ${r.rentTime}</div>
+                                <div style="font-size: 0.8rem; margin-top: 4px;">
+                                    <span style="color: #3182ce;">借出: ${timeStr}</span> · 
+                                    <span style="color: #e53e3e;">押金: ¥${r.deposit}</span> · 
+                                    <span style="color: #38a169;">租金: ¥${r.rentFee}</span>
+                                </div>
                             </div>
                             <button class="btn btn-sm btn-success" onclick="App.returnEquipment(${r.id})">
                                 <span>↩</span> 归还
                             </button>
                         </div>
-                    `).join('')}
+                            `;
+                        }).join('');
+                    })()}
                 </div>
             </div>
 
@@ -3052,7 +3154,9 @@ const App = {
                                     <th>出租日期</th>
                                     <th>出租时间</th>
                                     <th>归还日期</th>
+                                    <th>使用时长</th>
                                     <th>押金</th>
+                                    <th>押金状态</th>
                                     <th>租金</th>
                                     <th>状态</th>
                                     <th>操作</th>
@@ -3229,7 +3333,7 @@ const App = {
         if (rentals.length === 0) {
             return `
                 <tr>
-                    <td colspan="9">
+                    <td colspan="12">
                         <div class="empty-state">
                             <div class="empty-icon">📋</div>
                             <p>暂无租赁记录</p>
@@ -3238,15 +3342,37 @@ const App = {
                 </tr>
             `;
         }
-
-        return rentals.sort((a, b) => new Date(b.rentDate) - new Date(a.rentDate)).map(rental => `
+        const today = new Date();
+        return rentals.sort((a, b) => new Date(b.rentDate) - new Date(a.rentDate)).map(rental => {
+            const rentDT = new Date(`${rental.rentDate}T${rental.rentTime || '00:00'}:00`);
+            let timeStr = '';
+            let overdueBadge = '';
+            if (rental.status === 'rented') {
+                const hoursDiff = Math.round((today - rentDT) / (1000 * 60 * 60));
+                const daysDiff = Math.floor(hoursDiff / 24);
+                timeStr = daysDiff > 0 ? `${daysDiff}天${hoursDiff % 24}h` : `${hoursDiff}h`;
+                if (daysDiff >= 3) overdueBadge = '<span class="badge badge-expired" style="font-size:0.7rem">已超时</span>';
+                else if (hoursDiff >= 24) overdueBadge = '<span class="badge badge-pending" style="font-size:0.7rem">>24h</span>';
+            } else {
+                if (rental.returnDate) {
+                    const returnDT = new Date(`${rental.returnDate}T${rental.returnTime || '00:00'}:00`);
+                    const hoursDiff = Math.round((returnDT - rentDT) / (1000 * 60 * 60));
+                    const daysDiff = Math.floor(hoursDiff / 24);
+                    timeStr = daysDiff > 0 ? `${daysDiff}天${hoursDiff % 24}h` : `${hoursDiff}h`;
+                }
+            }
+            return `
             <tr>
                 <td>${rental.memberName}</td>
                 <td>${rental.equipmentName}</td>
                 <td>${rental.rentDate}</td>
                 <td>${rental.rentTime}</td>
                 <td>${rental.returnDate || '-'}</td>
+                <td>${timeStr} ${overdueBadge}</td>
                 <td>¥${rental.deposit}</td>
+                <td style="${rental.depositRefunded === false ? 'color:#e53e3e' : ''}">
+                    ${rental.status === 'rented' ? '待退还' : (rental.depositRefunded === false ? '未退' : '已退'}
+                </td>
                 <td>¥${rental.rentFee}</td>
                 <td><span class="badge badge-${rental.status}">${rental.status === 'rented' ? '租借中' : '已归还'}</span></td>
                 <td>
@@ -3255,7 +3381,7 @@ const App = {
                     ` : '-'}
                 </td>
             </tr>
-        `).join('');
+        `}).join('');
     },
 
     filterEquipment() {
@@ -3437,15 +3563,31 @@ const App = {
                     </div>
                 `;
             } else {
-                unreturnedList.innerHTML = rentedRentals.map(r => `
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">
-                        <div>
-                            <div style="font-weight: 500;">${r.memberName}</div>
-                            <div style="font-size: 0.8rem; color: #718096;">${r.equipmentName} · ${r.rentDate} ${r.rentTime}</div>
+                const today = new Date();
+                unreturnedList.innerHTML = rentedRentals.map(r => {
+                    const rentDT = new Date(`${r.rentDate}T${r.rentTime || '00:00'}:00`);
+                    const hoursDiff = Math.round((today - rentDT) / (1000 * 60 * 60));
+                    const daysDiff = Math.floor(hoursDiff / 24);
+                    const timeStr = daysDiff > 0 ? `${daysDiff}天${hoursDiff % 24}小时` : `${hoursDiff}小时`;
+                    const isOverdue = daysDiff >= 3;
+                    return `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; background: ${isOverdue ? '#fff5f5' : 'transparent'};">
+                        <div style="flex: 1;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="font-weight: 500;">${r.memberName}</div>
+                                ${isOverdue ? '<span class="badge badge-expired" style="font-size: 0.7rem;">已超时</span>' : (hoursDiff >= 24 ? '<span class="badge badge-pending" style="font-size: 0.7rem;">>24h</span>' : '')}
+                            </div>
+                            <div style="font-size: 0.8rem; color: #718096;">${r.equipmentName} · 出借 ${r.rentDate} ${r.rentTime}</div>
+                            <div style="font-size: 0.8rem; margin-top: 4px;">
+                                <span style="color: #3182ce;">借出: ${timeStr}</span> · 
+                                <span style="color: #e53e3e;">押金: ¥${r.deposit}</span> · 
+                                <span style="color: #38a169;">租金: ¥${r.rentFee}</span>
+                            </div>
                         </div>
                         <button class="btn btn-sm btn-success" onclick="App.returnEquipment(${r.id})">归还</button>
                     </div>
-                `).join('');
+                    `;
+                }).join('');
             }
         }
     },
@@ -3470,6 +3612,8 @@ const App = {
         }
         
         const now = new Date();
+        const deposit = parseInt(formData.get('deposit'));
+        const rentFee = parseInt(formData.get('rentFee'));
         const rental = {
             memberId: memberId,
             memberName: member ? member.name : '',
@@ -3479,25 +3623,37 @@ const App = {
             rentTime: now.toTimeString().slice(0, 5),
             returnDate: null,
             returnTime: null,
-            deposit: parseInt(formData.get('deposit')),
-            rentFee: parseInt(formData.get('rentFee')),
-            status: 'rented'
+            deposit: deposit,
+            rentFee: rentFee,
+            status: 'rented',
+            depositRefunded: false
         };
         
         DataStore.add('equipmentRentals', rental);
         DataStore.update('equipment', equipmentId, { available: equipment.available - 1 });
         
+        const todayStr = now.toISOString().split('T')[0];
         DataStore.add('transactions', {
             memberId: memberId,
             memberName: member ? member.name : '',
             type: 'equipment',
-            amount: parseInt(formData.get('rentFee')),
-            date: now.toISOString().split('T')[0],
-            description: `${equipment.name}(${equipment.size})租赁`
+            amount: rentFee,
+            date: todayStr,
+            description: `${equipment.name}(${equipment.size})租金收入`
         });
+        if (deposit > 0) {
+            DataStore.add('transactions', {
+                memberId: memberId,
+                memberName: member ? member.name : '',
+                type: 'deposit',
+                amount: deposit,
+                date: todayStr,
+                description: `${equipment.name}(${equipment.size})押金收取`
+            });
+        }
         
         this.hideModal('rent-equipment-modal');
-        this.showToast(`${member ? member.name : ''} 成功出借 ${equipment.name}(${equipment.size})！`);
+        this.showToast(`${member ? member.name : ''} 出借成功！租金¥${rentFee}${deposit > 0 ? `，押金¥${deposit}` : ''}`);
         this.refreshEquipmentPage();
     },
 
@@ -3507,18 +3663,31 @@ const App = {
         
         const equipment = DataStore.getById('equipment', rental.equipmentId);
         const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
         
         DataStore.update('equipmentRentals', rentalId, {
-            returnDate: now.toISOString().split('T')[0],
+            returnDate: todayStr,
             returnTime: now.toTimeString().slice(0, 5),
-            status: 'returned'
+            status: 'returned',
+            depositRefunded: true
         });
         
         if (equipment) {
             DataStore.update('equipment', rental.equipmentId, { available: equipment.available + 1 });
         }
         
-        this.showToast(`${rental.memberName} 的 ${rental.equipmentName} 已归还，押金已退还！`);
+        if (rental.deposit > 0) {
+            DataStore.add('transactions', {
+                memberId: rental.memberId,
+                memberName: rental.memberName,
+                type: 'deposit',
+                amount: -rental.deposit,
+                date: todayStr,
+                description: `${rental.equipmentName}押金退还`
+            });
+        }
+        
+        this.showToast(`${rental.memberName} 已归还！租金¥${rental.rentFee}${rental.deposit > 0 ? `，押金¥${rental.deposit}已退还` : ''}`);
         this.refreshEquipmentPage();
     },
 
@@ -4193,6 +4362,19 @@ const App = {
         const bookings = DataStore.getAll('courseBookings');
 
         const totalRevenue = transactions.reduce((s, t) => s + t.amount, 0);
+        const paidAmount = transactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+        const refundAmount = Math.abs(transactions.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0));
+        const unpaidBookings = bookings.filter(b => b.paymentStatus === 'unpaid' && b.status !== 'cancelled');
+        const unpaidRegs = DataStore.getAll('eventRegistrations').filter(r => r.paymentStatus === 'unpaid' && r.status !== 'cancelled');
+        let pendingAmount = 0;
+        unpaidBookings.forEach(b => {
+            const c = DataStore.getById('courses', b.courseId);
+            if (c) pendingAmount += c.price;
+        });
+        unpaidRegs.forEach(r => {
+            const ev = DataStore.getById('events', r.eventId);
+            if (ev) pendingAmount += ev.price;
+        });
         const now = new Date();
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
@@ -4208,7 +4390,8 @@ const App = {
             course: transactions.filter(t => t.type === 'course').reduce((s, t) => s + t.amount, 0),
             equipment: transactions.filter(t => t.type === 'equipment').reduce((s, t) => s + t.amount, 0),
             event: transactions.filter(t => t.type === 'event').reduce((s, t) => s + t.amount, 0),
-            shop: transactions.filter(t => t.type === 'shop').reduce((s, t) => s + t.amount, 0)
+            shop: transactions.filter(t => t.type === 'shop').reduce((s, t) => s + t.amount, 0),
+            deposit: transactions.filter(t => t.type === 'deposit').reduce((s, t) => s + t.amount, 0)
         };
 
         const memberSpending = {};
@@ -4222,8 +4405,8 @@ const App = {
             .sort((a, b) => b.total - a.total)
             .slice(0, 5);
 
-        const typeNames = { membership: '会员费', course: '课程费', equipment: '装备租赁', event: '赛事活动', shop: '商店消费' };
-        const colors = { membership: '#3182ce', course: '#805ad5', equipment: '#38a169', event: '#dd6b20', shop: '#e53e3e' };
+        const typeNames = { membership: '会员费', course: '课程费', equipment: '装备租赁', event: '赛事活动', shop: '商店消费', deposit: '押金往来' };
+        const colors = { membership: '#3182ce', course: '#805ad5', equipment: '#38a169', event: '#dd6b20', shop: '#e53e3e', deposit: '#a0aec0' };
 
         const totalTypeRevenue = Object.values(revenueByType).reduce((s, v) => s + v, 0);
         let conicGradient = '';
@@ -4257,6 +4440,7 @@ const App = {
                         <option value="equipment">装备租赁</option>
                         <option value="event">赛事活动</option>
                         <option value="shop">商店消费</option>
+                        <option value="deposit">押金往来</option>
                     </select>
                     <select class="form-control" id="stats-member-filter" onchange="App.updateStatistics()" style="width: 150px;">
                         <option value="">所有会员</option>
@@ -4281,6 +4465,27 @@ const App = {
                     <div class="stat-info">
                         <h3>筛选后交易笔数</h3>
                         <p>${transactions.length}</p>
+                    </div>
+                </div>
+                <div class="stat-card" id="stat-paid-amount">
+                    <div class="stat-icon green">✅</div>
+                    <div class="stat-info">
+                        <h3>实收金额</h3>
+                        <p>¥${paidAmount.toLocaleString()}</p>
+                    </div>
+                </div>
+                <div class="stat-card" id="stat-refund-amount">
+                    <div class="stat-icon red">↩</div>
+                    <div class="stat-info">
+                        <h3>退款金额</h3>
+                        <p>¥${refundAmount.toLocaleString()}</p>
+                    </div>
+                </div>
+                <div class="stat-card" id="stat-pending-amount">
+                    <div class="stat-icon orange">⏰</div>
+                    <div class="stat-info">
+                        <h3>待收款金额</h3>
+                        <p>¥${pendingAmount.toLocaleString()}</p>
                     </div>
                 </div>
                 <div class="stat-card">
@@ -4504,23 +4709,44 @@ const App = {
             );
         }
 
-        const typeNames = { membership: '会员费', course: '课程费', equipment: '装备租赁', event: '赛事活动', shop: '商店消费' };
-        const colors = { membership: '#3182ce', course: '#805ad5', equipment: '#38a169', event: '#dd6b20', shop: '#e53e3e' };
+        const typeNames = { membership: '会员费', course: '课程费', equipment: '装备租赁', event: '赛事活动', shop: '商店消费', deposit: '押金往来' };
+        const colors = { membership: '#3182ce', course: '#805ad5', equipment: '#38a169', event: '#dd6b20', shop: '#e53e3e', deposit: '#a0aec0' };
 
         const revenueByType = {
             membership: filtered.filter(t => t.type === 'membership').reduce((s, t) => s + t.amount, 0),
             course: filtered.filter(t => t.type === 'course').reduce((s, t) => s + t.amount, 0),
             equipment: filtered.filter(t => t.type === 'equipment').reduce((s, t) => s + t.amount, 0),
             event: filtered.filter(t => t.type === 'event').reduce((s, t) => s + t.amount, 0),
-            shop: filtered.filter(t => t.type === 'shop').reduce((s, t) => s + t.amount, 0)
+            shop: filtered.filter(t => t.type === 'shop').reduce((s, t) => s + t.amount, 0),
+            deposit: filtered.filter(t => t.type === 'deposit').reduce((s, t) => s + t.amount, 0)
         };
         const totalRevenue = filtered.reduce((s, t) => s + t.amount, 0);
         const totalTypeRevenue = Object.values(revenueByType).reduce((s, v) => s + v, 0);
+
+        const paidAmount = filtered.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+        const refundAmount = Math.abs(filtered.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0));
+        const allBookings = DataStore.getAll('courseBookings').filter(b => b.paymentStatus === 'unpaid' && b.status !== 'cancelled');
+        const allRegs = DataStore.getAll('eventRegistrations').filter(r => r.paymentStatus === 'unpaid' && r.status !== 'cancelled');
+        let pendingAmount = 0;
+        allBookings.forEach(b => {
+            const c = DataStore.getById('courses', b.courseId);
+            if (c) pendingAmount += c.price;
+        });
+        allRegs.forEach(r => {
+            const e = DataStore.getById('events', r.eventId);
+            if (e) pendingAmount += e.price;
+        });
 
         const statTotal = document.querySelector('#stat-total-revenue .stat-info p');
         if (statTotal) statTotal.textContent = '¥' + totalRevenue.toLocaleString();
         const statCount = document.querySelector('#stat-transaction-count .stat-info p');
         if (statCount) statCount.textContent = filtered.length;
+        const statPaid = document.querySelector('#stat-paid-amount .stat-info p');
+        if (statPaid) statPaid.textContent = '¥' + paidAmount.toLocaleString();
+        const statRefund = document.querySelector('#stat-refund-amount .stat-info p');
+        if (statRefund) statRefund.textContent = '¥' + refundAmount.toLocaleString();
+        const statPending = document.querySelector('#stat-pending-amount .stat-info p');
+        if (statPending) statPending.textContent = '¥' + pendingAmount.toLocaleString();
 
         let conicGradient = '';
         let currentAngle = 0;
@@ -4622,8 +4848,8 @@ const App = {
             `;
         }
 
-        const typeNames = { membership: '会员费', course: '课程费', equipment: '装备租赁', event: '赛事活动', shop: '商店消费' };
-        const typeColors = { membership: 'blue', course: 'purple', equipment: 'green', event: 'orange', shop: 'red' };
+        const typeNames = { membership: '会员费', course: '课程费', equipment: '装备租赁', event: '赛事活动', shop: '商店消费', deposit: '押金往来' };
+        const typeColors = { membership: 'blue', course: 'purple', equipment: 'green', event: 'orange', shop: 'red', deposit: 'gray' };
 
         return `
             <div class="table-container">
@@ -4634,11 +4860,25 @@ const App = {
                             <th>会员</th>
                             <th>类型</th>
                             <th>描述</th>
+                            <th>关联模块</th>
                             <th>金额</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${transactions.slice(-50).reverse().map(t => `
+                        ${transactions.slice(-50).reverse().map(t => {
+                            const isRefund = t.amount < 0;
+                            const isDeposit = t.type === 'deposit';
+                            let linkHtml = '';
+                            if (t.type === 'course') {
+                                linkHtml = `<button class="btn btn-sm btn-primary" style="padding:2px 8px;font-size:0.75rem;" onclick="App.renderPage('courses')">课程</button>`;
+                            } else if (t.type === 'event') {
+                                linkHtml = `<button class="btn btn-sm btn-success" style="padding:2px 8px;font-size:0.75rem;" onclick="App.renderPage('events')">赛事</button>`;
+                            } else if (t.type === 'equipment' || t.type === 'deposit') {
+                                linkHtml = `<button class="btn btn-sm btn-warning" style="padding:2px 8px;font-size:0.75rem;" onclick="App.renderPage('equipment')">装备</button>`;
+                            } else {
+                                linkHtml = `<span style="color:#a0aec0;font-size:0.8rem;">-</span>`;
+                            }
+                            return `
                             <tr>
                                 <td>${t.date}</td>
                                 <td>
@@ -4647,11 +4887,12 @@ const App = {
                                         <span>${t.memberName || '-'}</span>
                                     </div>
                                 </td>
-                                <td><span class="badge badge-${typeColors[t.type]}">${typeNames[t.type] || t.type}</span></td>
-                                <td>${t.description}</td>
-                                <td style="color: #38a169; font-weight: 600;">¥${t.amount.toLocaleString()}</td>
+                                <td><span class="badge badge-${typeColors[t.type] || 'gray'}">${typeNames[t.type] || t.type}</span></td>
+                                <td>${t.description}${isDeposit && isRefund ? ' ↩️' : (isDeposit ? ' 💳' : '')}</td>
+                                <td>${linkHtml}</td>
+                                <td style="color: ${isRefund ? '#e53e3e' : (isDeposit ? '#718096' : '#38a169')}; font-weight: 600;">${isRefund ? '-' : ''}¥${Math.abs(t.amount).toLocaleString()}</td>
                             </tr>
-                        `).join('')}
+                        `}).join('')}
                     </tbody>
                 </table>
             </div>
