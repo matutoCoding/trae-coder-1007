@@ -2450,33 +2450,40 @@ const App = {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${bookings.length === 0 ? `
-                                    <tr>
-                                        <td colspan="8">
-                                            <div class="empty-state">
-                                                <div class="empty-icon">📅</div>
-                                                <p>暂无预约记录</p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ` : bookings.map(booking => `
-                                    <tr>
-                                        <td>${booking.memberName}</td>
-                                        <td>${booking.courseName}</td>
-                                        <td>${DataStore.getById('courses', booking.courseId)?.coachName || '-'}</td>
-                                        <td>${booking.date}</td>
-                                        <td>${booking.time}</td>
-                                        <td><span class="badge badge-${booking.status}">${booking.status === 'confirmed' ? '已确认' : '待确认'}</span></td>
-                                        <td><span class="badge badge-${booking.paymentStatus}">${booking.paymentStatus === 'paid' ? '已支付' : '待支付'}</span></td>
-                                        <td>
-                                            <div class="action-buttons">
-                                                ${booking.status === 'pending' ? `<button class="btn btn-sm btn-success" onclick="App.confirmBooking(${booking.id})">确认</button>` : ''}
-                                                ${booking.paymentStatus === 'unpaid' ? `<button class="btn btn-sm btn-primary" onclick="App.markBookingPaid(${booking.id})">收款</button>` : ''}
-                                                <button class="btn btn-sm btn-danger" onclick="App.cancelBooking(${booking.id})">取消</button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                `).join('')}
+                                ${(() => {
+                                    const statusNames = { pending: '待确认', confirmed: '已确认', cancelled: '已取消' };
+                                    const paymentNames = { unpaid: '待支付', paid: '已支付', refunded: '已退款' };
+                                    if (bookings.length === 0) {
+                                        return `
+                                            <tr>
+                                                <td colspan="8">
+                                                    <div class="empty-state">
+                                                        <div class="empty-icon">📅</div>
+                                                        <p>暂无预约记录</p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }
+                                    return bookings.map(booking => `
+                                        <tr>
+                                            <td>${booking.memberName}</td>
+                                            <td>${booking.courseName}</td>
+                                            <td>${DataStore.getById('courses', booking.courseId)?.coachName || '-'}</td>
+                                            <td>${booking.date}</td>
+                                            <td>${booking.time}</td>
+                                            <td><span class="badge badge-${booking.status}">${statusNames[booking.status] || booking.status}</span></td>
+                                            <td><span class="badge badge-${booking.paymentStatus}">${paymentNames[booking.paymentStatus] || booking.paymentStatus}</span></td>
+                                            <td>
+                                                <div class="action-buttons">
+                                                    ${booking.status === 'pending' ? `<button class="btn btn-sm btn-success" onclick="App.confirmBooking(${booking.id})">确认</button>` : ''}
+                                                    ${booking.paymentStatus === 'unpaid' && booking.status !== 'cancelled' ? `<button class="btn btn-sm btn-primary" onclick="App.markBookingPaid(${booking.id})">收款</button>` : ''}
+                                                    ${booking.status !== 'cancelled' ? `<button class="btn btn-sm btn-danger" onclick="App.cancelBooking(${booking.id})">取消</button>` : ''}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `).join('');
+                                })()}
                             </tbody>
                         </table>
                     </div>
@@ -3002,7 +3009,7 @@ const App = {
             }
             DataStore.update('courseBookings', id, { status: 'cancelled', paymentStatus: 'refunded' });
         } else {
-            DataStore.update('courseBookings', id, { status: 'cancelled' });
+            DataStore.update('courseBookings', id, { status: 'cancelled', paymentStatus: 'refunded' });
         }
         
         this.showToast('预约已取消');
@@ -3343,40 +3350,53 @@ const App = {
             `;
         }
         const today = new Date();
-        return rentals.sort((a, b) => new Date(b.rentDate) - new Date(a.rentDate)).map(rental => {
-            const rentDT = new Date(`${rental.rentDate}T${rental.rentTime || '00:00'}:00`);
-            let timeStr = '';
+        return rentals.sort((a, b) => {
+            try { return new Date(b.rentDate) - new Date(a.rentDate); } catch (e) { return 0; }
+        }).map(rental => {
+            const rentDate = rental.rentDate || '';
+            const rentTime = rental.rentTime || '00:00';
+            const deposit = rental.deposit !== undefined ? rental.deposit : 0;
+            const rentFee = rental.rentFee !== undefined ? rental.rentFee : 0;
+            const status = rental.status || 'returned';
+            const depositRefunded = rental.depositRefunded !== undefined ? rental.depositRefunded : (status === 'returned');
+            const memberName = rental.memberName || '-';
+            const equipmentName = rental.equipmentName || '-';
+            
+            const rentDT = new Date(`${rentDate}T${rentTime}:00`);
+            let timeStr = '-';
             let overdueBadge = '';
-            if (rental.status === 'rented') {
-                const hoursDiff = Math.round((today - rentDT) / (1000 * 60 * 60));
-                const daysDiff = Math.floor(hoursDiff / 24);
-                timeStr = daysDiff > 0 ? `${daysDiff}天${hoursDiff % 24}h` : `${hoursDiff}h`;
-                if (daysDiff >= 3) overdueBadge = '<span class="badge badge-expired" style="font-size:0.7rem">已超时</span>';
-                else if (hoursDiff >= 24) overdueBadge = '<span class="badge badge-pending" style="font-size:0.7rem">>24h</span>';
-            } else {
-                if (rental.returnDate) {
-                    const returnDT = new Date(`${rental.returnDate}T${rental.returnTime || '00:00'}:00`);
-                    const hoursDiff = Math.round((returnDT - rentDT) / (1000 * 60 * 60));
-                    const daysDiff = Math.floor(hoursDiff / 24);
-                    timeStr = daysDiff > 0 ? `${daysDiff}天${hoursDiff % 24}h` : `${hoursDiff}h`;
+            try {
+                if (rentDate) {
+                    if (status === 'rented') {
+                        const hoursDiff = Math.max(0, Math.round((today - rentDT) / (1000 * 60 * 60)));
+                        const daysDiff = Math.floor(hoursDiff / 24);
+                        timeStr = daysDiff > 0 ? `${daysDiff}天${hoursDiff % 24}h` : `${hoursDiff}h`;
+                        if (daysDiff >= 3) overdueBadge = '<span class="badge badge-expired" style="font-size:0.7rem">已超时</span>';
+                        else if (hoursDiff >= 24) overdueBadge = '<span class="badge badge-pending" style="font-size:0.7rem">>24h</span>';
+                    } else if (rental.returnDate) {
+                        const returnDT = new Date(`${rental.returnDate}T${rental.returnTime || '00:00'}:00`);
+                        const hoursDiff = Math.max(0, Math.round((returnDT - rentDT) / (1000 * 60 * 60)));
+                        const daysDiff = Math.floor(hoursDiff / 24);
+                        timeStr = daysDiff > 0 ? `${daysDiff}天${hoursDiff % 24}h` : `${hoursDiff}h`;
+                    }
                 }
-            }
+            } catch (e) { timeStr = '-'; }
             return `
             <tr>
-                <td>${rental.memberName}</td>
-                <td>${rental.equipmentName}</td>
-                <td>${rental.rentDate}</td>
-                <td>${rental.rentTime}</td>
+                <td>${memberName}</td>
+                <td>${equipmentName}</td>
+                <td>${rentDate || '-'}</td>
+                <td>${rentTime || '-'}</td>
                 <td>${rental.returnDate || '-'}</td>
                 <td>${timeStr} ${overdueBadge}</td>
-                <td>¥${rental.deposit}</td>
-                <td style="${rental.depositRefunded === false ? 'color:#e53e3e' : ''}">
-                    ${rental.status === 'rented' ? '待退还' : (rental.depositRefunded === false ? '未退' : '已退'}
+                <td>¥${deposit}</td>
+                <td style="${depositRefunded === false && status === 'returned' ? 'color:#e53e3e' : ''}">
+                    ${status === 'rented' ? '待退还' : (depositRefunded === false ? '未退' : '已退')}
                 </td>
-                <td>¥${rental.rentFee}</td>
-                <td><span class="badge badge-${rental.status}">${rental.status === 'rented' ? '租借中' : '已归还'}</span></td>
+                <td>¥${rentFee}</td>
+                <td><span class="badge badge-${status}">${status === 'rented' ? '租借中' : '已归还'}</span></td>
                 <td>
-                    ${rental.status === 'rented' ? `
+                    ${status === 'rented' && rental.id ? `
                         <button class="btn btn-sm btn-success" onclick="App.returnEquipment(${rental.id})">归还</button>
                     ` : '-'}
                 </td>
@@ -3785,37 +3805,44 @@ const App = {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${registrations.length === 0 ? `
-                                    <tr>
-                                        <td colspan="8">
-                                            <div class="empty-state">
-                                                <div class="empty-icon">📝</div>
-                                                <p>暂无报名记录</p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ` : registrations.map(reg => {
-                                    const event = DataStore.getById('events', reg.eventId);
+                                ${(() => {
+                                    const statusNames = { pending: '待确认', confirmed: '已确认', cancelled: '已取消' };
+                                    const paymentNames = { unpaid: '待支付', paid: '已支付', refunded: '已退款' };
                                     const typeNames = { grading: '攀岩考级', competition: '赛事活动', training: '安全培训' };
-                                    return `
-                                        <tr>
-                                            <td>${reg.memberName}</td>
-                                            <td>${reg.eventName}</td>
-                                            <td>${event ? typeNames[event.type] : '-'}</td>
-                                            <td>${reg.date}</td>
-                                            <td>¥${event ? event.price : 0}</td>
-                                            <td><span class="badge badge-${reg.status}">${reg.status === 'confirmed' ? '已确认' : '待确认'}</span></td>
-                                            <td><span class="badge badge-${reg.paymentStatus}">${reg.paymentStatus === 'paid' ? '已支付' : '待支付'}</span></td>
-                                            <td>
-                                                <div class="action-buttons">
-                                                    ${reg.status === 'pending' ? `<button class="btn btn-sm btn-success" onclick="App.confirmRegistration(${reg.id})">确认</button>` : ''}
-                                                    ${reg.paymentStatus === 'unpaid' && event && event.price > 0 ? `<button class="btn btn-sm btn-primary" onclick="App.markRegistrationPaid(${reg.id})">收款</button>` : ''}
-                                                    <button class="btn btn-sm btn-danger" onclick="App.cancelRegistration(${reg.id})">取消</button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    `;
-                                }).join('')}
+                                    if (registrations.length === 0) {
+                                        return `
+                                            <tr>
+                                                <td colspan="8">
+                                                    <div class="empty-state">
+                                                        <div class="empty-icon">📝</div>
+                                                        <p>暂无报名记录</p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }
+                                    return registrations.map(reg => {
+                                        const event = DataStore.getById('events', reg.eventId);
+                                        return `
+                                            <tr>
+                                                <td>${reg.memberName}</td>
+                                                <td>${reg.eventName}</td>
+                                                <td>${event ? typeNames[event.type] : '-'}</td>
+                                                <td>${reg.date}</td>
+                                                <td>¥${event ? event.price : 0}</td>
+                                                <td><span class="badge badge-${reg.status}">${statusNames[reg.status] || reg.status}</span></td>
+                                                <td><span class="badge badge-${reg.paymentStatus}">${paymentNames[reg.paymentStatus] || reg.paymentStatus}</span></td>
+                                                <td>
+                                                    <div class="action-buttons">
+                                                        ${reg.status === 'pending' ? `<button class="btn btn-sm btn-success" onclick="App.confirmRegistration(${reg.id})">确认</button>` : ''}
+                                                        ${reg.paymentStatus === 'unpaid' && reg.status !== 'cancelled' && event && event.price > 0 ? `<button class="btn btn-sm btn-primary" onclick="App.markRegistrationPaid(${reg.id})">收款</button>` : ''}
+                                                        ${reg.status !== 'cancelled' ? `<button class="btn btn-sm btn-danger" onclick="App.cancelRegistration(${reg.id})">取消</button>` : ''}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join('');
+                                })()}
                             </tbody>
                         </table>
                     </div>
@@ -4290,7 +4317,7 @@ const App = {
             });
             DataStore.update('eventRegistrations', id, { status: 'cancelled', paymentStatus: 'refunded' });
         } else {
-            DataStore.update('eventRegistrations', id, { status: 'cancelled' });
+            DataStore.update('eventRegistrations', id, { status: 'cancelled', paymentStatus: 'refunded' });
         }
         
         if (event) {
@@ -4361,9 +4388,10 @@ const App = {
         const events = DataStore.getAll('events');
         const bookings = DataStore.getAll('courseBookings');
 
-        const totalRevenue = transactions.reduce((s, t) => s + t.amount, 0);
-        const paidAmount = transactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-        const refundAmount = Math.abs(transactions.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0));
+        const businessTransactions = transactions.filter(t => t.type !== 'deposit');
+        const totalRevenue = businessTransactions.reduce((s, t) => s + t.amount, 0);
+        const paidAmount = businessTransactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+        const refundAmount = Math.abs(businessTransactions.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0));
         const unpaidBookings = bookings.filter(b => b.paymentStatus === 'unpaid' && b.status !== 'cancelled');
         const unpaidRegs = DataStore.getAll('eventRegistrations').filter(r => r.paymentStatus === 'unpaid' && r.status !== 'cancelled');
         let pendingAmount = 0;
@@ -4395,7 +4423,7 @@ const App = {
         };
 
         const memberSpending = {};
-        transactions.forEach(t => {
+        businessTransactions.forEach(t => {
             if (!memberSpending[t.memberId]) {
                 memberSpending[t.memberId] = { name: t.memberName, total: 0 };
             }
@@ -4408,11 +4436,11 @@ const App = {
         const typeNames = { membership: '会员费', course: '课程费', equipment: '装备租赁', event: '赛事活动', shop: '商店消费', deposit: '押金往来' };
         const colors = { membership: '#3182ce', course: '#805ad5', equipment: '#38a169', event: '#dd6b20', shop: '#e53e3e', deposit: '#a0aec0' };
 
-        const totalTypeRevenue = Object.values(revenueByType).reduce((s, v) => s + v, 0);
+        const totalTypeRevenue = Object.entries(revenueByType).reduce((s, [k, v]) => s + (k === 'deposit' ? 0 : v), 0);
         let conicGradient = '';
         let currentAngle = 0;
         Object.entries(revenueByType).forEach(([type, amount]) => {
-            if (amount > 0) {
+            if (type !== 'deposit' && amount > 0) {
                 const angle = (amount / totalTypeRevenue) * 360;
                 conicGradient += `${colors[type]} ${currentAngle}deg ${currentAngle + angle}deg, `;
                 currentAngle += angle;
@@ -4527,7 +4555,7 @@ const App = {
                         <div id="pie-chart-container" style="display: flex; align-items: center; gap: 30px;">
                             <div id="pie-chart-circle" style="width: 200px; height: 200px; border-radius: 50%; background: conic-gradient(${conicGradient});"></div>
                             <div style="flex: 1;" id="pie-chart-legend">
-                                ${Object.entries(revenueByType).map(([type, amount]) => `
+                                ${Object.entries(revenueByType).filter(([type]) => type !== 'deposit').map(([type, amount]) => `
                                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             <div style="width: 12px; height: 12px; border-radius: 3px; background: ${colors[type]};"></div>
@@ -4549,9 +4577,11 @@ const App = {
                         <h3 class="card-title">📊 收入类型对比</h3>
                     </div>
                     <div class="card-body" id="bar-chart-container">
-                        ${Object.entries(revenueByType).map(([type, amount]) => {
-                            const maxAmount = Math.max(...Object.values(revenueByType));
-                            const percentage = maxAmount > 0 ? (amount / maxAmount) * 100 : 0;
+                        ${(() => {
+                            const nonDeposit = Object.entries(revenueByType).filter(([type]) => type !== 'deposit');
+                            const maxAmount = Math.max(...nonDeposit.map(([_, v]) => v), 1);
+                            return nonDeposit.map(([type, amount]) => {
+                                const percentage = maxAmount > 0 ? (amount / maxAmount) * 100 : 0;
                             return `
                                 <div style="margin-bottom: 16px;">
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
@@ -4599,7 +4629,7 @@ const App = {
                         <h3 class="card-title">📅 月度趋势</h3>
                     </div>
                     <div class="card-body" id="monthly-chart">
-                        ${this.renderMonthlyChart()}
+                        ${this.renderMonthlyChart(businessTransactions)}
                     </div>
                 </div>
             </div>
@@ -4621,6 +4651,7 @@ const App = {
                             <option value="equipment">装备租赁</option>
                             <option value="event">赛事活动</option>
                             <option value="shop">商店消费</option>
+                            <option value="deposit">押金往来</option>
                         </select>
                     </div>
                     <div id="transactions-list">
@@ -4649,7 +4680,7 @@ const App = {
     },
 
     getMonthlyData(transactions) {
-        if (!transactions) transactions = DataStore.getAll('transactions');
+        if (!transactions) transactions = DataStore.getAll('transactions').filter(t => t.type !== 'deposit');
         const monthlyData = [];
         const now = new Date();
         
@@ -4720,11 +4751,12 @@ const App = {
             shop: filtered.filter(t => t.type === 'shop').reduce((s, t) => s + t.amount, 0),
             deposit: filtered.filter(t => t.type === 'deposit').reduce((s, t) => s + t.amount, 0)
         };
-        const totalRevenue = filtered.reduce((s, t) => s + t.amount, 0);
-        const totalTypeRevenue = Object.values(revenueByType).reduce((s, v) => s + v, 0);
+        const businessFiltered = filtered.filter(t => t.type !== 'deposit');
+        const totalRevenue = businessFiltered.reduce((s, t) => s + t.amount, 0);
+        const totalTypeRevenue = Object.entries(revenueByType).reduce((s, [k, v]) => s + (k === 'deposit' ? 0 : v), 0);
 
-        const paidAmount = filtered.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-        const refundAmount = Math.abs(filtered.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0));
+        const paidAmount = businessFiltered.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+        const refundAmount = Math.abs(businessFiltered.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0));
         const allBookings = DataStore.getAll('courseBookings').filter(b => b.paymentStatus === 'unpaid' && b.status !== 'cancelled');
         const allRegs = DataStore.getAll('eventRegistrations').filter(r => r.paymentStatus === 'unpaid' && r.status !== 'cancelled');
         let pendingAmount = 0;
@@ -4751,7 +4783,7 @@ const App = {
         let conicGradient = '';
         let currentAngle = 0;
         Object.entries(revenueByType).forEach(([type, amount]) => {
-            if (amount > 0) {
+            if (type !== 'deposit' && amount > 0) {
                 const angle = (amount / totalTypeRevenue) * 360;
                 conicGradient += `${colors[type]} ${currentAngle}deg ${currentAngle + angle}deg, `;
                 currentAngle += angle;
@@ -4762,7 +4794,7 @@ const App = {
         if (pieCircle) pieCircle.style.background = `conic-gradient(${conicGradient})`;
         const pieLegend = document.getElementById('pie-chart-legend');
         if (pieLegend) {
-            pieLegend.innerHTML = Object.entries(revenueByType).map(([type, amount]) => `
+            pieLegend.innerHTML = Object.entries(revenueByType).filter(([type]) => type !== 'deposit').map(([type, amount]) => `
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <div style="width: 12px; height: 12px; border-radius: 3px; background: ${colors[type]};"></div>
@@ -4778,8 +4810,9 @@ const App = {
 
         const barChart = document.getElementById('bar-chart-container');
         if (barChart) {
-            const maxAmount = Math.max(...Object.values(revenueByType), 1);
-            barChart.innerHTML = Object.entries(revenueByType).map(([type, amount]) => {
+            const nonDepositTypes = Object.entries(revenueByType).filter(([type]) => type !== 'deposit');
+            const maxAmount = Math.max(...nonDepositTypes.map(([_, v]) => v), 1);
+            barChart.innerHTML = nonDepositTypes.map(([type, amount]) => {
                 const percentage = maxAmount > 0 ? (amount / maxAmount) * 100 : 0;
                 return `
                     <div style="margin-bottom: 16px;">
@@ -4796,7 +4829,7 @@ const App = {
         }
 
         const memberSpending = {};
-        filtered.forEach(t => {
+        businessFiltered.forEach(t => {
             if (!memberSpending[t.memberId]) {
                 memberSpending[t.memberId] = { name: t.memberName, total: 0 };
             }
