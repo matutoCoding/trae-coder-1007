@@ -714,8 +714,8 @@ const App = {
         });
         
         document.getElementById('edit-route-modal').remove();
-        this.showToast('线路更新成功！');
-        this.filterRoutes();
+        this.showToast(`线路「${formData.get('name')}」更新成功！`);
+        this.refreshSettersPage();
     },
 
     replaceRoute(id) {
@@ -1074,19 +1074,7 @@ const App = {
     },
 
     filterReplaceRoutes() {
-        const filter = document.getElementById('replace-filter').value;
-        let routes = DataStore.getAll('routes');
-        const today = new Date();
-        
-        if (filter === 'overdue') {
-            routes = routes.filter(r => new Date(r.nextReplaceDate) < today);
-        } else if (filter === 'week') {
-            routes = this.getRoutesDueInDays(7);
-        } else if (filter === 'month') {
-            routes = this.getRoutesDueInDays(30);
-        }
-        
-        document.getElementById('replace-routes-list').innerHTML = this.renderReplaceRoutesList(routes);
+        this.refreshSettersPage();
     },
 
     saveSetter() {
@@ -1211,6 +1199,34 @@ const App = {
         document.body.insertAdjacentHTML('beforeend', modalHtml);
     },
 
+    refreshSettersPage() {
+        const setters = DataStore.getAll('setters');
+        const routes = DataStore.getAll('routes');
+        const today = new Date();
+
+        const statCards = document.querySelectorAll('.stats-grid .stat-card');
+        if (statCards.length >= 4) {
+            statCards[0].querySelector('.stat-info p').textContent = setters.length;
+            statCards[1].querySelector('.stat-info p').textContent = routes.filter(r => new Date(r.nextReplaceDate) < today).length;
+            statCards[2].querySelector('.stat-info p').textContent = this.getRoutesDueInDays(7).length;
+            statCards[3].querySelector('.stat-info p').textContent = this.getReplacedThisMonth().length;
+        }
+
+        const replaceRoutesList = document.getElementById('replace-routes-list');
+        if (replaceRoutesList) {
+            const filter = document.getElementById('replace-filter')?.value || 'all';
+            let filteredRoutes = routes;
+            if (filter === 'overdue') {
+                filteredRoutes = routes.filter(r => new Date(r.nextReplaceDate) < today);
+            } else if (filter === 'week') {
+                filteredRoutes = this.getRoutesDueInDays(7);
+            } else if (filter === 'month') {
+                filteredRoutes = this.getRoutesDueInDays(30);
+            }
+            replaceRoutesList.innerHTML = this.renderReplaceRoutesList(filteredRoutes);
+        }
+    },
+
     markRouteReplaced(id) {
         const today = new Date().toISOString().split('T')[0];
         const nextDate = new Date();
@@ -1221,8 +1237,8 @@ const App = {
             nextReplaceDate: nextDate.toISOString().split('T')[0]
         });
         
-        this.showToast('线路已标记为已更换！');
-        this.filterReplaceRoutes();
+        this.showToast('线路已标记为已更换！下次更换日期: ' + nextDate.toISOString().split('T')[0]);
+        this.refreshSettersPage();
     },
 
     renderMembers() {
@@ -1489,13 +1505,80 @@ const App = {
     },
 
     initMembers() {
-        document.getElementById('checkin-wall').addEventListener('change', function() {
-            const container = document.getElementById('safety-briefing-container');
-            container.style.display = this.value === '抱石区' ? 'block' : 'none';
-        });
+        const wallSelect = document.getElementById('checkin-wall');
+        if (wallSelect) {
+            wallSelect.addEventListener('change', function() {
+                const container = document.getElementById('safety-briefing-container');
+                if (container) {
+                    container.style.display = this.value === '抱石区' ? 'block' : 'none';
+                }
+            });
+        }
         
-        const today = new Date().toISOString().split('T')[0];
-        document.getElementById('member-expire').value = this.calculateExpireDate('月卡');
+        const expireInput = document.getElementById('member-expire');
+        if (expireInput) {
+            expireInput.value = this.calculateExpireDate('月卡');
+        }
+    },
+
+    refreshMembersPage() {
+        const members = DataStore.getAll('members');
+        const checkIns = DataStore.getAll('checkIns');
+        const todayCheckIns = this.getTodayCheckIns();
+        const monthCheckIns = this.getMonthCheckIns();
+        const expiringMembers = this.getExpiringMembers();
+
+        const statCards = document.querySelectorAll('.stats-grid .stat-card');
+        if (statCards.length >= 4) {
+            statCards[0].querySelector('.stat-info p').textContent = members.length;
+            statCards[0].querySelector('.trend').textContent = `↑ ${members.filter(m => m.status === 'active').length} 活跃`;
+            statCards[1].querySelector('.stat-info p').textContent = monthCheckIns.length;
+            statCards[2].querySelector('.stat-info p').textContent = expiringMembers.length;
+            statCards[3].querySelector('.stat-info p').textContent = members.filter(m => m.status === 'expired').length;
+        }
+
+        const membersList = document.getElementById('members-list');
+        if (membersList) {
+            membersList.innerHTML = this.renderMembersList(members);
+        }
+
+        const todayTableBody = document.querySelector('.card:nth-child(4) tbody');
+        if (todayTableBody) {
+            if (todayCheckIns.length === 0) {
+                todayTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="4">
+                            <div class="empty-state">
+                                <div class="empty-icon">📅</div>
+                                <p>今日暂无入场记录</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            } else {
+                todayTableBody.innerHTML = todayCheckIns.map(c => `
+                    <tr>
+                        <td>${c.time}</td>
+                        <td>${c.memberName}</td>
+                        <td>${c.wallType}</td>
+                        <td>
+                            <span class="badge ${c.hasSafetyBriefing ? 'badge-active' : 'badge-expired'}">
+                                ${c.hasSafetyBriefing ? '已确认' : '未确认'}
+                            </span>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        const checkinMemberSelect = document.getElementById('checkin-member');
+        if (checkinMemberSelect) {
+            checkinMemberSelect.value = '';
+        }
+        const safetyCheckbox = document.getElementById('safety-agreed');
+        if (safetyCheckbox) {
+            safetyCheckbox.checked = false;
+        }
     },
 
     calculateExpireDate(type) {
@@ -1672,10 +1755,15 @@ const App = {
             return;
         }
         
+        if (member.remainingVisits !== undefined && member.remainingVisits <= 0) {
+            this.showToast('次卡次数已用完，请续费', 'error');
+            return;
+        }
+        
         if (wallType === '抱石区') {
             const safetyAgreed = document.getElementById('safety-agreed').checked;
             if (!safetyAgreed) {
-                this.showToast('请确认安全须知', 'error');
+                this.showToast('请先确认安全须知', 'error');
                 return;
             }
         }
@@ -1703,16 +1791,38 @@ const App = {
         }
         DataStore.update('members', parseInt(memberId), updates);
         
-        this.showToast(`${member.name} 入场成功！`);
-        this.renderPage();
+        this.showToast(`${member.name} 入场成功！剩余次数: ${member.remainingVisits !== undefined ? (member.remainingVisits - 1) : '无限次'}`);
+        this.refreshMembersPage();
     },
 
     showCheckinByPhone() {
         this.showModal('checkin-phone-modal');
+        const phoneInput = document.getElementById('checkin-phone-input');
+        if (phoneInput) {
+            phoneInput.value = '';
+        }
+        const infoDiv = document.getElementById('phone-member-info');
+        if (infoDiv) {
+            infoDiv.style.display = 'none';
+            infoDiv.innerHTML = '';
+        }
+    },
+
+    togglePhoneSafetyBriefing() {
+        const wallType = document.getElementById('phone-checkin-wall').value;
+        const container = document.getElementById('phone-safety-briefing');
+        if (container) {
+            container.style.display = wallType === '抱石区' ? 'block' : 'none';
+        }
     },
 
     searchMemberByPhone() {
-        const phone = document.getElementById('checkin-phone-input').value;
+        const phone = document.getElementById('checkin-phone-input').value.trim();
+        if (!phone) {
+            this.showToast('请输入手机号', 'error');
+            return;
+        }
+        
         const members = DataStore.query('members', m => m.phone === phone && m.status === 'active');
         
         if (members.length === 0) {
@@ -1721,6 +1831,14 @@ const App = {
         }
         
         const member = members[0];
+        const today = new Date();
+        const expireDate = new Date(member.expireDate);
+        
+        if (expireDate < today) {
+            this.showToast('会员已过期，请续费', 'error');
+            return;
+        }
+        
         const infoDiv = document.getElementById('phone-member-info');
         infoDiv.style.display = 'block';
         infoDiv.innerHTML = `
@@ -1731,18 +1849,38 @@ const App = {
                         <div style="font-weight: 600;">${member.name}</div>
                         <div style="font-size: 0.85rem;">${member.memberType} · 到期: ${member.expireDate}</div>
                         ${member.remainingVisits !== undefined ? `<div style="font-size: 0.85rem;">剩余次数: ${member.remainingVisits}</div>` : ''}
+                        ${member.remainingVisits !== undefined && member.remainingVisits <= 0 ? '<div style="font-size: 0.85rem; color: #e53e3e;">⚠ 次卡已用完</div>' : ''}
                     </div>
                 </div>
             </div>
             <div class="form-group">
                 <label>入场区域</label>
-                <select class="form-control" id="phone-checkin-wall">
+                <select class="form-control" id="phone-checkin-wall" onchange="App.togglePhoneSafetyBriefing()">
                     <option value="抱石区">抱石区</option>
                     <option value="难度区">难度区</option>
                     <option value="速度区">速度区</option>
                 </select>
             </div>
-            <button class="btn btn-success" style="width: 100%;" onclick="App.processPhoneCheckin(${member.id})">
+            <div id="phone-safety-briefing" style="display: block;">
+                <div class="member-briefing">
+                    <h4>⚠️ 抱石攀爬安全告知</h4>
+                    <ul>
+                        <li>攀爬前必须充分热身，避免运动损伤</li>
+                        <li>注意观察周围环境，确保落点清晰</li>
+                        <li>禁止在垫子上奔跑、跳跃</li>
+                        <li>下落时注意控制身体，避免砸到他人</li>
+                        <li>遇到难度线路请量力而行，不要勉强</li>
+                        <li>如有身体不适请立即停止攀爬</li>
+                    </ul>
+                    <div style="margin-top: 12px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="phone-safety-agreed">
+                            <span style="font-size: 0.85rem;">我已阅读并同意以上安全须知</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-success" style="width: 100%; margin-top: 16px;" onclick="App.processPhoneCheckin(${member.id})">
                 <span>✓</span> 确认入场
             </button>
         `;
@@ -1751,6 +1889,19 @@ const App = {
     processPhoneCheckin(memberId) {
         const wallType = document.getElementById('phone-checkin-wall').value;
         const member = DataStore.getById('members', parseInt(memberId));
+        
+        if (member.remainingVisits !== undefined && member.remainingVisits <= 0) {
+            this.showToast('次卡次数已用完，请续费', 'error');
+            return;
+        }
+        
+        if (wallType === '抱石区') {
+            const safetyAgreed = document.getElementById('phone-safety-agreed').checked;
+            if (!safetyAgreed) {
+                this.showToast('请先确认安全须知', 'error');
+                return;
+            }
+        }
         
         const now = new Date();
         const checkIn = {
@@ -1776,8 +1927,8 @@ const App = {
         DataStore.update('members', parseInt(memberId), updates);
         
         this.hideModal('checkin-phone-modal');
-        this.showToast(`${member.name} 入场成功！`);
-        this.renderPage();
+        this.showToast(`${member.name} 入场成功！剩余次数: ${member.remainingVisits !== undefined ? (member.remainingVisits - 1) : '无限次'}`);
+        this.refreshMembersPage();
     },
 
     editMember(id) {
@@ -2621,6 +2772,74 @@ const App = {
         this.showModal('booking-modal');
     },
 
+    refreshCoursesPage() {
+        const coaches = DataStore.getAll('coaches');
+        const courses = DataStore.getAll('courses');
+        const bookings = DataStore.getAll('courseBookings');
+
+        const statCards = document.querySelectorAll('.stats-grid .stat-card');
+        if (statCards.length >= 4) {
+            statCards[0].querySelector('.stat-info p').textContent = coaches.length;
+            statCards[1].querySelector('.stat-info p').textContent = courses.length;
+            statCards[2].querySelector('.stat-info p').textContent = bookings.filter(b => b.status === 'confirmed').length;
+            statCards[3].querySelector('.stat-info p').textContent = '¥' + bookings
+                .filter(b => b.paymentStatus === 'paid')
+                .reduce((s, b) => {
+                    const course = DataStore.getById('courses', b.courseId);
+                    return s + (course ? course.price : 0);
+                }, 0).toLocaleString();
+        }
+
+        const coursesList = document.getElementById('courses-list');
+        if (coursesList) {
+            const search = document.getElementById('course-search')?.value.toLowerCase() || '';
+            const typeFilter = document.getElementById('filter-course-type')?.value || '';
+            const levelFilter = document.getElementById('filter-course-level')?.value || '';
+            let filteredCourses = courses;
+            if (search) filteredCourses = filteredCourses.filter(c => c.name.toLowerCase().includes(search) || c.description.toLowerCase().includes(search));
+            if (typeFilter) filteredCourses = filteredCourses.filter(c => c.type === typeFilter);
+            if (levelFilter) filteredCourses = filteredCourses.filter(c => c.level.trim() === levelFilter);
+            coursesList.innerHTML = this.renderCoursesList(filteredCourses);
+        }
+
+        const bookingsTable = document.querySelector('.card:nth-child(4) tbody');
+        if (bookingsTable) {
+            if (bookings.length === 0) {
+                bookingsTable.innerHTML = `
+                    <tr>
+                        <td colspan="8">
+                            <div class="empty-state">
+                                <div class="empty-icon">📅</div>
+                                <p>暂无预约记录</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            } else {
+                const statusNames = { pending: '待确认', confirmed: '已确认', cancelled: '已取消' };
+                const paymentNames = { unpaid: '待支付', paid: '已支付', refunded: '已退款' };
+                bookingsTable.innerHTML = bookings.map(booking => `
+                    <tr>
+                        <td>${booking.memberName}</td>
+                        <td>${booking.courseName}</td>
+                        <td>${DataStore.getById('courses', booking.courseId)?.coachName || '-'}</td>
+                        <td>${booking.date}</td>
+                        <td>${booking.time}</td>
+                        <td><span class="badge badge-${booking.status}">${statusNames[booking.status] || booking.status}</span></td>
+                        <td><span class="badge badge-${booking.paymentStatus}">${paymentNames[booking.paymentStatus] || booking.paymentStatus}</span></td>
+                        <td>
+                            <div class="action-buttons">
+                                ${booking.status === 'pending' ? `<button class="btn btn-sm btn-success" onclick="App.confirmBooking(${booking.id})">确认</button>` : ''}
+                                ${booking.paymentStatus === 'unpaid' && booking.status !== 'cancelled' ? `<button class="btn btn-sm btn-primary" onclick="App.markBookingPaid(${booking.id})">收款</button>` : ''}
+                                ${booking.status !== 'cancelled' ? `<button class="btn btn-sm btn-danger" onclick="App.cancelBooking(${booking.id})">取消</button>` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        }
+    },
+
     saveBooking() {
         const form = document.getElementById('booking-form');
         const formData = new FormData(form);
@@ -2648,18 +2867,20 @@ const App = {
         
         DataStore.add('courseBookings', booking);
         this.hideModal('booking-modal');
-        this.showToast('预约成功！');
-        this.renderPage();
+        this.showToast(`${member ? member.name : ''} 成功预约 ${course ? course.name : ''}！待确认和收款`);
+        this.refreshCoursesPage();
     },
 
     confirmBooking(id) {
         DataStore.update('courseBookings', id, { status: 'confirmed' });
         this.showToast('预约已确认！');
-        this.renderPage();
+        this.refreshCoursesPage();
     },
 
     markBookingPaid(id) {
         const booking = DataStore.getById('courseBookings', id);
+        if (!booking || booking.paymentStatus === 'paid') return;
+        
         const course = DataStore.getById('courses', booking.courseId);
         
         DataStore.update('courseBookings', id, { paymentStatus: 'paid' });
@@ -2673,16 +2894,35 @@ const App = {
             description: `${booking.courseName}课程费`
         });
         
-        this.showToast('已标记为已支付！');
-        this.renderPage();
+        this.showToast(`${booking.memberName} 已收款 ¥${course ? course.price : 0}！`);
+        this.refreshCoursesPage();
     },
 
     cancelBooking(id) {
-        if (confirm('确定要取消这个预约吗？')) {
-            DataStore.delete('courseBookings', id);
-            this.showToast('预约已取消');
-            this.renderPage();
+        if (!confirm('确定要取消这个预约吗？已收款的将会从消费统计中扣除。')) return;
+        
+        const booking = DataStore.getById('courseBookings', id);
+        if (!booking) return;
+        
+        if (booking.paymentStatus === 'paid') {
+            const course = DataStore.getById('courses', booking.courseId);
+            if (course) {
+                DataStore.add('transactions', {
+                    memberId: booking.memberId,
+                    memberName: booking.memberName,
+                    type: 'course',
+                    amount: -course.price,
+                    date: new Date().toISOString().split('T')[0],
+                    description: `${booking.courseName}取消退款`
+                });
+            }
+            DataStore.update('courseBookings', id, { status: 'cancelled', paymentStatus: 'refunded' });
+        } else {
+            DataStore.update('courseBookings', id, { status: 'cancelled' });
         }
+        
+        this.showToast('预约已取消');
+        this.refreshCoursesPage();
     },
 
     renderEquipment() {
@@ -2764,6 +3004,30 @@ const App = {
                     <div id="equipment-list">
                         ${this.renderEquipmentList(equipment)}
                     </div>
+                </div>
+            </div>
+
+            <div class="card" style="border-left: 4px solid #ed8936;">
+                <div class="card-header">
+                    <h3 class="card-title">⚠️ 未归还装备提醒 (${rentals.filter(r => r.status === 'rented').length})</h3>
+                </div>
+                <div class="card-body" id="unreturned-list" style="padding: 0;">
+                    ${rentals.filter(r => r.status === 'rented').length === 0 ? `
+                        <div class="empty-state" style="padding: 20px;">
+                            <div class="empty-icon">✅</div>
+                            <p>所有装备已归还</p>
+                        </div>
+                    ` : rentals.filter(r => r.status === 'rented').map(r => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #e2e8f0;">
+                            <div>
+                                <div style="font-weight: 500;">${r.memberName}</div>
+                                <div style="font-size: 0.8rem; color: #718096;">${r.equipmentName} · 出借于 ${r.rentDate} ${r.rentTime}</div>
+                            </div>
+                            <button class="btn btn-sm btn-success" onclick="App.returnEquipment(${r.id})">
+                                <span>↩</span> 归还
+                            </button>
+                        </div>
+                    `).join('')}
                 </div>
             </div>
 
@@ -3132,6 +3396,60 @@ const App = {
         this.showModal('rent-equipment-modal');
     },
 
+    refreshEquipmentPage() {
+        const equipment = DataStore.getAll('equipment');
+        const rentals = DataStore.getAll('equipmentRentals');
+        const rentedRentals = rentals.filter(r => r.status === 'rented');
+
+        const statCards = document.querySelectorAll('.stats-grid .stat-card');
+        if (statCards.length >= 4) {
+            statCards[0].querySelector('.stat-info p').textContent = equipment.reduce((s, e) => s + e.total, 0);
+            statCards[1].querySelector('.stat-info p').textContent = equipment.reduce((s, e) => s + e.available, 0);
+            statCards[2].querySelector('.stat-info p').textContent = rentedRentals.length;
+            statCards[3].querySelector('.stat-info p').textContent = '¥' + rentals.reduce((s, r) => s + r.rentFee, 0).toLocaleString();
+        }
+
+        const equipmentList = document.getElementById('equipment-list');
+        if (equipmentList) {
+            const typeFilter = document.getElementById('filter-equipment-type')?.value || '';
+            const sizeFilter = document.getElementById('filter-equipment-size')?.value || '';
+            let filteredEquipment = equipment;
+            if (typeFilter) filteredEquipment = filteredEquipment.filter(e => e.type === typeFilter);
+            if (sizeFilter) filteredEquipment = filteredEquipment.filter(e => e.size === sizeFilter);
+            equipmentList.innerHTML = this.renderEquipmentList(filteredEquipment);
+        }
+
+        const rentalsList = document.getElementById('rentals-list');
+        if (rentalsList) {
+            const statusFilter = document.getElementById('filter-rental-status')?.value || '';
+            let filteredRentals = rentals;
+            if (statusFilter) filteredRentals = filteredRentals.filter(r => r.status === statusFilter);
+            rentalsList.innerHTML = this.renderRentalsList(filteredRentals);
+        }
+
+        const unreturnedList = document.getElementById('unreturned-list');
+        if (unreturnedList) {
+            if (rentedRentals.length === 0) {
+                unreturnedList.innerHTML = `
+                    <div class="empty-state" style="padding: 20px;">
+                        <div class="empty-icon">✅</div>
+                        <p>所有装备已归还</p>
+                    </div>
+                `;
+            } else {
+                unreturnedList.innerHTML = rentedRentals.map(r => `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">
+                        <div>
+                            <div style="font-weight: 500;">${r.memberName}</div>
+                            <div style="font-size: 0.8rem; color: #718096;">${r.equipmentName} · ${r.rentDate} ${r.rentTime}</div>
+                        </div>
+                        <button class="btn btn-sm btn-success" onclick="App.returnEquipment(${r.id})">归还</button>
+                    </div>
+                `).join('');
+            }
+        }
+    },
+
     saveRental() {
         const form = document.getElementById('rent-form');
         const formData = new FormData(form);
@@ -3179,8 +3497,8 @@ const App = {
         });
         
         this.hideModal('rent-equipment-modal');
-        this.showToast('装备出借成功！');
-        this.renderPage();
+        this.showToast(`${member ? member.name : ''} 成功出借 ${equipment.name}(${equipment.size})！`);
+        this.refreshEquipmentPage();
     },
 
     returnEquipment(rentalId) {
@@ -3200,8 +3518,8 @@ const App = {
             DataStore.update('equipment', rental.equipmentId, { available: equipment.available + 1 });
         }
         
-        this.showToast('装备已归还，押金已退还！');
-        this.filterRentals();
+        this.showToast(`${rental.memberName} 的 ${rental.equipmentName} 已归还，押金已退还！`);
+        this.refreshEquipmentPage();
     },
 
     renderEvents() {
@@ -3644,6 +3962,75 @@ const App = {
         this.showModal('register-event-modal');
     },
 
+    refreshEventsPage() {
+        const events = DataStore.getAll('events');
+        const registrations = DataStore.getAll('eventRegistrations');
+
+        const statCards = document.querySelectorAll('.stats-grid .stat-card');
+        if (statCards.length >= 4) {
+            statCards[0].querySelector('.stat-info p').textContent = events.length;
+            statCards[1].querySelector('.stat-info p').textContent = events.filter(e => e.status === 'open').length;
+            statCards[2].querySelector('.stat-info p').textContent = registrations.length;
+            statCards[3].querySelector('.stat-info p').textContent = '¥' + registrations
+                .filter(r => r.paymentStatus === 'paid')
+                .reduce((s, r) => {
+                    const ev = DataStore.getById('events', r.eventId);
+                    return s + (ev ? ev.price : 0);
+                }, 0).toLocaleString();
+        }
+
+        const eventsList = document.getElementById('events-list');
+        if (eventsList) {
+            const search = document.getElementById('event-search')?.value.toLowerCase() || '';
+            const typeFilter = document.getElementById('filter-event-type')?.value || '';
+            const statusFilter = document.getElementById('filter-event-status')?.value || '';
+            let filteredEvents = events;
+            if (search) filteredEvents = filteredEvents.filter(e => e.name.toLowerCase().includes(search) || e.description.toLowerCase().includes(search));
+            if (typeFilter) filteredEvents = filteredEvents.filter(e => e.type === typeFilter);
+            if (statusFilter) filteredEvents = filteredEvents.filter(e => e.status === statusFilter);
+            eventsList.innerHTML = this.renderEventsList(filteredEvents);
+        }
+
+        const regTable = document.querySelector('.card:nth-child(4) tbody');
+        if (regTable) {
+            const statusNames = { pending: '待确认', confirmed: '已确认', cancelled: '已取消' };
+            const paymentNames = { unpaid: '待支付', paid: '已支付', refunded: '已退款' };
+            if (registrations.length === 0) {
+                regTable.innerHTML = `
+                    <tr>
+                        <td colspan="7">
+                            <div class="empty-state">
+                                <div class="empty-icon">📝</div>
+                                <p>暂无报名记录</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            } else {
+                regTable.innerHTML = registrations.map(reg => {
+                    const ev = DataStore.getById('events', reg.eventId);
+                    return `
+                        <tr>
+                            <td>${reg.memberName}</td>
+                            <td>${reg.eventName}</td>
+                            <td>${reg.date}</td>
+                            <td><span class="badge badge-${reg.status}">${statusNames[reg.status] || reg.status}</span></td>
+                            <td><span class="badge badge-${reg.paymentStatus}">${paymentNames[reg.paymentStatus] || reg.paymentStatus}</span></td>
+                            <td>¥${ev ? ev.price : 0}</td>
+                            <td>
+                                <div class="action-buttons">
+                                    ${reg.status === 'pending' ? `<button class="btn btn-sm btn-success" onclick="App.confirmRegistration(${reg.id})">确认</button>` : ''}
+                                    ${reg.paymentStatus === 'unpaid' && reg.status !== 'cancelled' && ev && ev.price > 0 ? `<button class="btn btn-sm btn-primary" onclick="App.markRegistrationPaid(${reg.id})">收款</button>` : ''}
+                                    ${reg.status !== 'cancelled' ? `<button class="btn btn-sm btn-danger" onclick="App.cancelRegistration(${reg.id})">取消</button>` : ''}
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+        }
+    },
+
     saveRegistration() {
         const form = document.getElementById('register-form');
         const formData = new FormData(form);
@@ -3682,10 +4069,29 @@ const App = {
         DataStore.add('eventRegistrations', registration);
         DataStore.update('events', eventId, { registered: event.registered + 1 });
         
+        this.hideModal('register-event-modal');
+        this.showToast(`${member ? member.name : ''} 报名 ${event ? event.name : ''} 成功！${event && event.price > 0 ? '待收款' : ''}`);
+        this.refreshEventsPage();
+    },
+
+    confirmRegistration(id) {
+        DataStore.update('eventRegistrations', id, { status: 'confirmed' });
+        this.showToast('报名已确认！');
+        this.refreshEventsPage();
+    },
+
+    markRegistrationPaid(id) {
+        const reg = DataStore.getById('eventRegistrations', id);
+        if (!reg || reg.paymentStatus === 'paid') return;
+        
+        const event = DataStore.getById('events', reg.eventId);
+        
+        DataStore.update('eventRegistrations', id, { paymentStatus: 'paid' });
+        
         if (event && event.price > 0) {
             DataStore.add('transactions', {
-                memberId: memberId,
-                memberName: member ? member.name : '',
+                memberId: reg.memberId,
+                memberName: reg.memberName,
                 type: 'event',
                 amount: event.price,
                 date: new Date().toISOString().split('T')[0],
@@ -3693,40 +4099,37 @@ const App = {
             });
         }
         
-        this.hideModal('register-event-modal');
-        this.showToast('报名成功！');
-        this.renderPage();
-    },
-
-    confirmRegistration(id) {
-        DataStore.update('eventRegistrations', id, { status: 'confirmed' });
-        this.showToast('报名已确认！');
-        this.renderPage();
-    },
-
-    markRegistrationPaid(id) {
-        const reg = DataStore.getById('eventRegistrations', id);
-        const event = DataStore.getById('events', reg.eventId);
-        
-        DataStore.update('eventRegistrations', id, { paymentStatus: 'paid' });
-        
-        this.showToast('已标记为已支付！');
-        this.renderPage();
+        this.showToast(`${reg.memberName} 已收款 ¥${event ? event.price : 0}！`);
+        this.refreshEventsPage();
     },
 
     cancelRegistration(id) {
-        if (confirm('确定要取消这个报名吗？')) {
-            const reg = DataStore.getById('eventRegistrations', id);
-            const event = DataStore.getById('events', reg.eventId);
-            
-            DataStore.delete('eventRegistrations', id);
-            if (event) {
-                DataStore.update('events', reg.eventId, { registered: Math.max(0, event.registered - 1) });
-            }
-            
-            this.showToast('报名已取消');
-            this.renderPage();
+        if (!confirm('确定要取消这个报名吗？已收款的将会从消费统计中扣除，名额将释放。')) return;
+        
+        const reg = DataStore.getById('eventRegistrations', id);
+        if (!reg) return;
+        const event = DataStore.getById('events', reg.eventId);
+        
+        if (reg.paymentStatus === 'paid' && event) {
+            DataStore.add('transactions', {
+                memberId: reg.memberId,
+                memberName: reg.memberName,
+                type: 'event',
+                amount: -event.price,
+                date: new Date().toISOString().split('T')[0],
+                description: `${event.name}取消退款`
+            });
+            DataStore.update('eventRegistrations', id, { status: 'cancelled', paymentStatus: 'refunded' });
+        } else {
+            DataStore.update('eventRegistrations', id, { status: 'cancelled' });
         }
+        
+        if (event) {
+            DataStore.update('events', reg.eventId, { registered: Math.max(0, event.registered - 1) });
+        }
+        
+        this.showToast('报名已取消，名额已释放');
+        this.refreshEventsPage();
     },
 
     viewEventRegistrations(eventId) {
@@ -3841,11 +4244,23 @@ const App = {
                     <p class="page-subtitle">查看场馆运营数据和消费分析</p>
                 </div>
                 <div style="display: flex; gap: 10px;">
-                    <select class="form-control" id="stats-time-filter" onchange="App.updateStatistics()" style="width: 150px;">
+                    <select class="form-control" id="stats-time-filter" onchange="App.updateStatistics()" style="width: 130px;">
                         <option value="all">全部时间</option>
                         <option value="month">本月</option>
                         <option value="quarter">本季度</option>
                         <option value="year">本年</option>
+                    </select>
+                    <select class="form-control" id="stats-type-filter" onchange="App.updateStatistics()" style="width: 130px;">
+                        <option value="">所有类型</option>
+                        <option value="membership">会员费</option>
+                        <option value="course">课程费</option>
+                        <option value="equipment">装备租赁</option>
+                        <option value="event">赛事活动</option>
+                        <option value="shop">商店消费</option>
+                    </select>
+                    <select class="form-control" id="stats-member-filter" onchange="App.updateStatistics()" style="width: 150px;">
+                        <option value="">所有会员</option>
+                        ${members.map(m => `<option value="${m.id}">${m.name}</option>`).join('')}
                     </select>
                     <button class="btn btn-secondary" onclick="App.exportData()">
                         <span>📥</span> 导出数据
@@ -3853,19 +4268,19 @@ const App = {
                 </div>
             </div>
 
-            <div class="stats-grid">
-                <div class="stat-card">
+            <div class="stats-grid" id="stats-cards">
+                <div class="stat-card" id="stat-total-revenue">
                     <div class="stat-icon green">💰</div>
                     <div class="stat-info">
-                        <h3>总收入</h3>
+                        <h3>筛选后总收入</h3>
                         <p>¥${totalRevenue.toLocaleString()}</p>
                     </div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" id="stat-transaction-count">
                     <div class="stat-icon blue">📈</div>
                     <div class="stat-info">
-                        <h3>本月收入</h3>
-                        <p>¥${monthlyRevenue.toLocaleString()}</p>
+                        <h3>筛选后交易笔数</h3>
+                        <p>${transactions.length}</p>
                     </div>
                 </div>
                 <div class="stat-card">
@@ -3904,9 +4319,9 @@ const App = {
                         <h3 class="card-title">🥧 收入构成分析</h3>
                     </div>
                     <div class="card-body">
-                        <div style="display: flex; align-items: center; gap: 30px;">
-                            <div style="width: 200px; height: 200px; border-radius: 50%; background: conic-gradient(${conicGradient});"></div>
-                            <div style="flex: 1;">
+                        <div id="pie-chart-container" style="display: flex; align-items: center; gap: 30px;">
+                            <div id="pie-chart-circle" style="width: 200px; height: 200px; border-radius: 50%; background: conic-gradient(${conicGradient});"></div>
+                            <div style="flex: 1;" id="pie-chart-legend">
                                 ${Object.entries(revenueByType).map(([type, amount]) => `
                                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
                                         <div style="display: flex; align-items: center; gap: 8px;">
@@ -3928,7 +4343,7 @@ const App = {
                     <div class="card-header">
                         <h3 class="card-title">📊 收入类型对比</h3>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" id="bar-chart-container">
                         ${Object.entries(revenueByType).map(([type, amount]) => {
                             const maxAmount = Math.max(...Object.values(revenueByType));
                             const percentage = maxAmount > 0 ? (amount / maxAmount) * 100 : 0;
@@ -3953,7 +4368,7 @@ const App = {
                     <div class="card-header">
                         <h3 class="card-title">🏆 消费排行 TOP 5</h3>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" id="top-spenders-container">
                         ${topSpenders.length === 0 ? `
                             <div class="empty-state">
                                 <div class="empty-icon">🏆</div>
@@ -4011,8 +4426,8 @@ const App = {
         `;
     },
 
-    renderMonthlyChart() {
-        const monthlyData = this.getMonthlyData();
+    renderMonthlyChart(transactions) {
+        const monthlyData = this.getMonthlyData(transactions);
         const maxValue = Math.max(...monthlyData.map(d => d.value), 1);
         
         return `
@@ -4028,8 +4443,8 @@ const App = {
         `;
     },
 
-    getMonthlyData() {
-        const transactions = DataStore.getAll('transactions');
+    getMonthlyData(transactions) {
+        if (!transactions) transactions = DataStore.getAll('transactions');
         const monthlyData = [];
         const now = new Date();
         
@@ -4052,24 +4467,149 @@ const App = {
     },
 
     updateStatistics() {
-        const filter = document.getElementById('stats-time-filter').value;
-        const transactions = DataStore.getAll('transactions');
-        let filteredTransactions = transactions;
-        
+        const allTransactions = DataStore.getAll('transactions');
+        let filtered = allTransactions;
+
+        const timeFilter = document.getElementById('stats-time-filter')?.value || 'all';
+        const typeFilter = document.getElementById('stats-type-filter')?.value || '';
+        const memberFilter = document.getElementById('stats-member-filter')?.value || '';
+
+        const detailTypeFilter = document.getElementById('filter-transaction-type')?.value || '';
+        const detailSearch = document.getElementById('transaction-search')?.value.toLowerCase() || '';
+
         const now = new Date();
-        if (filter === 'month') {
-            filteredTransactions = transactions.filter(t => {
+        if (timeFilter === 'month') {
+            filtered = filtered.filter(t => {
                 const d = new Date(t.date);
                 return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
             });
-        } else if (filter === 'quarter') {
+        } else if (timeFilter === 'quarter') {
             const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
-            filteredTransactions = transactions.filter(t => new Date(t.date) >= quarterStart);
-        } else if (filter === 'year') {
-            filteredTransactions = transactions.filter(t => new Date(t.date).getFullYear() === now.getFullYear());
+            filtered = filtered.filter(t => new Date(t.date) >= quarterStart);
+        } else if (timeFilter === 'year') {
+            filtered = filtered.filter(t => new Date(t.date).getFullYear() === now.getFullYear());
         }
-        
-        document.getElementById('transactions-list').innerHTML = this.renderTransactionsList(filteredTransactions);
+
+        if (typeFilter) {
+            filtered = filtered.filter(t => t.type === typeFilter);
+        } else if (detailTypeFilter) {
+            filtered = filtered.filter(t => t.type === detailTypeFilter);
+        }
+        if (memberFilter) {
+            filtered = filtered.filter(t => t.memberId === parseInt(memberFilter));
+        }
+        if (detailSearch) {
+            filtered = filtered.filter(t => 
+                t.memberName && t.memberName.toLowerCase().includes(detailSearch)
+            );
+        }
+
+        const typeNames = { membership: '会员费', course: '课程费', equipment: '装备租赁', event: '赛事活动', shop: '商店消费' };
+        const colors = { membership: '#3182ce', course: '#805ad5', equipment: '#38a169', event: '#dd6b20', shop: '#e53e3e' };
+
+        const revenueByType = {
+            membership: filtered.filter(t => t.type === 'membership').reduce((s, t) => s + t.amount, 0),
+            course: filtered.filter(t => t.type === 'course').reduce((s, t) => s + t.amount, 0),
+            equipment: filtered.filter(t => t.type === 'equipment').reduce((s, t) => s + t.amount, 0),
+            event: filtered.filter(t => t.type === 'event').reduce((s, t) => s + t.amount, 0),
+            shop: filtered.filter(t => t.type === 'shop').reduce((s, t) => s + t.amount, 0)
+        };
+        const totalRevenue = filtered.reduce((s, t) => s + t.amount, 0);
+        const totalTypeRevenue = Object.values(revenueByType).reduce((s, v) => s + v, 0);
+
+        const statTotal = document.querySelector('#stat-total-revenue .stat-info p');
+        if (statTotal) statTotal.textContent = '¥' + totalRevenue.toLocaleString();
+        const statCount = document.querySelector('#stat-transaction-count .stat-info p');
+        if (statCount) statCount.textContent = filtered.length;
+
+        let conicGradient = '';
+        let currentAngle = 0;
+        Object.entries(revenueByType).forEach(([type, amount]) => {
+            if (amount > 0) {
+                const angle = (amount / totalTypeRevenue) * 360;
+                conicGradient += `${colors[type]} ${currentAngle}deg ${currentAngle + angle}deg, `;
+                currentAngle += angle;
+            }
+        });
+        conicGradient = conicGradient.slice(0, -2);
+        const pieCircle = document.getElementById('pie-chart-circle');
+        if (pieCircle) pieCircle.style.background = `conic-gradient(${conicGradient})`;
+        const pieLegend = document.getElementById('pie-chart-legend');
+        if (pieLegend) {
+            pieLegend.innerHTML = Object.entries(revenueByType).map(([type, amount]) => `
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 12px; height: 12px; border-radius: 3px; background: ${colors[type]};"></div>
+                        <span>${typeNames[type]}</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-weight: 600;">¥${amount.toLocaleString()}</div>
+                        <div style="font-size: 0.75rem; color: #718096;">${totalTypeRevenue > 0 ? ((amount / totalTypeRevenue) * 100).toFixed(1) : 0}%</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        const barChart = document.getElementById('bar-chart-container');
+        if (barChart) {
+            const maxAmount = Math.max(...Object.values(revenueByType), 1);
+            barChart.innerHTML = Object.entries(revenueByType).map(([type, amount]) => {
+                const percentage = maxAmount > 0 ? (amount / maxAmount) * 100 : 0;
+                return `
+                    <div style="margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                            <span>${typeNames[type]}</span>
+                            <span style="font-weight: 600;">¥${amount.toLocaleString()}</span>
+                        </div>
+                        <div style="height: 24px; background: #edf2f7; border-radius: 4px; overflow: hidden;">
+                            <div style="width: ${percentage}%; height: 100%; background: ${colors[type]}; border-radius: 4px;"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        const memberSpending = {};
+        filtered.forEach(t => {
+            if (!memberSpending[t.memberId]) {
+                memberSpending[t.memberId] = { name: t.memberName, total: 0 };
+            }
+            memberSpending[t.memberId].total += t.amount;
+        });
+        const topSpenders = Object.values(memberSpending)
+            .sort((a, b) => b.total - a.total)
+            .slice(0, 5);
+        const topSpendersEl = document.getElementById('top-spenders-container');
+        if (topSpendersEl) {
+            if (topSpenders.length === 0) {
+                topSpendersEl.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🏆</div>
+                        <p>暂无消费数据</p>
+                    </div>
+                `;
+            } else {
+                topSpendersEl.innerHTML = topSpenders.map((spender, index) => `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #e2e8f0;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="width: 28px; height: 28px; border-radius: 50%; background: ${index === 0 ? '#f6e05e' : index === 1 ? '#a0aec0' : index === 2 ? '#d69e2e' : '#e2e8f0'}; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem;">
+                                ${index + 1}
+                            </div>
+                            <div class="member-avatar">${spender.name.charAt(0)}</div>
+                            <span style="font-weight: 500;">${spender.name}</span>
+                        </div>
+                        <span style="font-weight: 700; color: #38a169;">¥${spender.total.toLocaleString()}</span>
+                    </div>
+                `).join('');
+            }
+        }
+
+        const monthlyChart = document.getElementById('monthly-chart');
+        if (monthlyChart) {
+            monthlyChart.innerHTML = this.renderMonthlyChart(filtered);
+        }
+
+        document.getElementById('transactions-list').innerHTML = this.renderTransactionsList(filtered);
     },
 
     renderTransactionsList(transactions) {
@@ -4119,21 +4659,7 @@ const App = {
     },
 
     filterTransactions() {
-        const search = document.getElementById('transaction-search').value.toLowerCase();
-        const type = document.getElementById('filter-transaction-type').value;
-        
-        let transactions = DataStore.getAll('transactions');
-        
-        if (search) {
-            transactions = transactions.filter(t => 
-                t.memberName && t.memberName.toLowerCase().includes(search)
-            );
-        }
-        if (type) {
-            transactions = transactions.filter(t => t.type === type);
-        }
-        
-        document.getElementById('transactions-list').innerHTML = this.renderTransactionsList(transactions);
+        this.updateStatistics();
     },
 
     exportData() {
