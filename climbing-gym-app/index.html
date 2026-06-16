@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>攀岩馆运营管理系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">🧗</span>
+                    <span class="logo-text">攀岩馆管理</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-item active" data-page="dashboard" onclick="App.navigateTo('dashboard')">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">运营概览</span>
+                </div>
+                <div class="nav-item" data-page="walls" onclick="App.navigateTo('walls')">
+                    <span class="nav-icon">🧱</span>
+                    <span class="nav-text">岩壁线路</span>
+                </div>
+                <div class="nav-item" data-page="setters" onclick="App.navigateTo('setters')">
+                    <span class="nav-icon">🎯</span>
+                    <span class="nav-text">定线管理</span>
+                </div>
+                <div class="nav-item" data-page="members" onclick="App.navigateTo('members')">
+                    <span class="nav-icon">👥</span>
+                    <span class="nav-text">会员管理</span>
+                </div>
+                <div class="nav-item" data-page="courses" onclick="App.navigateTo('courses')">
+                    <span class="nav-icon">👨‍🏫</span>
+                    <span class="nav-text">教练课程</span>
+                </div>
+                <div class="nav-item" data-page="equipment" onclick="App.navigateTo('equipment')">
+                    <span class="nav-icon">🎒</span>
+                    <span class="nav-text">装备租赁</span>
+                </div>
+                <div class="nav-item" data-page="events" onclick="App.navigateTo('events')">
+                    <span class="nav-icon">🏆</span>
+                    <span class="nav-text">赛事活动</span>
+                </div>
+                <div class="nav-item" data-page="statistics" onclick="App.navigateTo('statistics')">
+                    <span class="nav-icon">📈</span>
+                    <span class="nav-text">消费统计</span>
+                </div>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="user-avatar">管</div>
+                    <div class="user-details">
+                        <div class="user-name">管理员</div>
+                        <div class="user-role">系统管理员</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="top-bar-left">
+                    <button class="menu-toggle" onclick="App.toggleSidebar()">☰</button>
+                    <h1 class="current-page-title" id="page-title">运营概览</h1>
+                </div>
+                <div class="top-bar-right">
+                    <div class="search-box">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" class="form-control" placeholder="全局搜索..." id="global-search" onkeyup="App.handleGlobalSearch(event)">
+                    </div>
+                    <div class="notification-bell" onclick="App.showNotifications()">
+                        🔔
+                        <span class="notification-badge">3</span>
+                    </div>
+                </div>
+            </header>
+
+            <div class="content-area" id="content-area">
+            </div>
+        </main>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="js/data.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            DataStore.init();
+            App.init();
+            App.renderPage('dashboard');
+        });
+    </script>
+</body>
+</html>
