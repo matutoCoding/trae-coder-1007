@@ -172,7 +172,7 @@ const App = {
         const today = new Date().toISOString().split('T')[0];
         const todayCheckIns = checkIns.filter(c => c.date === today);
 
-        const totalRevenue = transactions.reduce((sum, t) => sum + t.amount, 0);
+        const totalRevenue = transactions.filter(t => t.type !== 'deposit').reduce((sum, t) => sum + t.amount, 0);
         const activeMembers = members.filter(m => m.status === 'active').length;
 
         return `
@@ -4191,10 +4191,11 @@ const App = {
         if (regTable) {
             const statusNames = { pending: '待确认', confirmed: '已确认', cancelled: '已取消' };
             const paymentNames = { unpaid: '待支付', paid: '已支付', refunded: '已退款' };
+            const typeNames = { grading: '攀岩考级', competition: '赛事活动', training: '安全培训' };
             if (registrations.length === 0) {
                 regTable.innerHTML = `
                     <tr>
-                        <td colspan="7">
+                        <td colspan="8">
                             <div class="empty-state">
                                 <div class="empty-icon">📝</div>
                                 <p>暂无报名记录</p>
@@ -4209,10 +4210,11 @@ const App = {
                         <tr>
                             <td>${reg.memberName}</td>
                             <td>${reg.eventName}</td>
+                            <td>${ev ? typeNames[ev.type] : '-'}</td>
                             <td>${reg.date}</td>
+                            <td>¥${ev ? ev.price : 0}</td>
                             <td><span class="badge badge-${reg.status}">${statusNames[reg.status] || reg.status}</span></td>
                             <td><span class="badge badge-${reg.paymentStatus}">${paymentNames[reg.paymentStatus] || reg.paymentStatus}</span></td>
-                            <td>¥${ev ? ev.price : 0}</td>
                             <td>
                                 <div class="action-buttons">
                                     ${reg.status === 'pending' ? `<button class="btn btn-sm btn-success" onclick="App.confirmRegistration(${reg.id})">确认</button>` : ''}
@@ -4381,6 +4383,7 @@ const App = {
     },
 
     renderStatistics() {
+        try {
         const transactions = DataStore.getAll('transactions');
         const members = DataStore.getAll('members');
         const checkIns = DataStore.getAll('checkIns');
@@ -4582,7 +4585,7 @@ const App = {
                             const maxAmount = Math.max(...nonDeposit.map(([_, v]) => v), 1);
                             return nonDeposit.map(([type, amount]) => {
                                 const percentage = maxAmount > 0 ? (amount / maxAmount) * 100 : 0;
-                            return `
+                                return `
                                 <div style="margin-bottom: 16px;">
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
                                         <span>${typeNames[type]}</span>
@@ -4593,7 +4596,8 @@ const App = {
                                     </div>
                                 </div>
                             `;
-                        }).join('')}
+                            }).join('');
+                        })()}
                     </div>
                 </div>
             </div>
@@ -4660,6 +4664,24 @@ const App = {
                 </div>
             </div>
         `;
+        } catch (e) {
+            console.error('renderStatistics error:', e);
+            return `
+                <div class="page-header">
+                    <h2 class="page-title">📊 消费统计</h2>
+                    <p class="page-subtitle">查看场馆运营数据和消费分析</p>
+                </div>
+                <div class="card">
+                    <div class="card-body">
+                        <div class="empty-state">
+                            <div class="empty-icon">⚠️</div>
+                            <p>统计数据加载失败，请刷新页面重试</p>
+                            <p style="font-size: 0.8rem; color: #718096;">${e.message}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
     },
 
     renderMonthlyChart(transactions) {
@@ -4703,6 +4725,7 @@ const App = {
     },
 
     updateStatistics() {
+        try {
         const allTransactions = DataStore.getAll('transactions');
         let filtered = allTransactions;
 
@@ -4865,10 +4888,13 @@ const App = {
 
         const monthlyChart = document.getElementById('monthly-chart');
         if (monthlyChart) {
-            monthlyChart.innerHTML = this.renderMonthlyChart(filtered);
+            monthlyChart.innerHTML = this.renderMonthlyChart(businessFiltered);
         }
 
         document.getElementById('transactions-list').innerHTML = this.renderTransactionsList(filtered);
+        } catch (e) {
+            console.error('updateStatistics error:', e);
+        }
     },
 
     renderTransactionsList(transactions) {
